@@ -96,10 +96,10 @@ class VideoModule(mp_module.MPModule):
         gpi = self.master.messages['GLOBAL_POSITION_INT']
         att = self.master.messages['ATTITUDE']
         vehicle_dcm = Matrix3()
-        vehicle_dcm.from_euler(att.roll, att.pitch, att.yaw)
+        vehicle_dcm.from_euler(0, 0, att.yaw)
 
         rotmat_copter_gimbal = Matrix3()
-        rotmat_copter_gimbal.from_euler312(m.pointing_a, m.pointing_b, 0)
+        rotmat_copter_gimbal.from_euler312(radians(m.pointing_a/100), radians(m.pointing_b/100), 0)
         gimbal_dcm = vehicle_dcm * rotmat_copter_gimbal
 
         lat = gpi.lat * 1.0e-7
