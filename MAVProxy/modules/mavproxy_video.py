@@ -112,10 +112,10 @@ class VideoModule(mp_module.MPModule):
 		self.osd_string = 'No_GPS_Lock!'
 		return		
 	
-	elif alt < 5:
-		self.osd_string = 'UAV_Landed'
-
-		return
+#	elif alt < 5:
+#		self.osd_string = 'UAV_Landed'
+#
+#		return
 
         # ground plane
         ground_plane = Plane()
