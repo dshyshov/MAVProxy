@@ -146,7 +146,7 @@ class VideoModule(mp_module.MPModule):
         wgspoint = WGSPoint()
         (sk_lat, sk_lon) = wgspoint.WGS84_SK42(self.view_lat, self.view_lon, pt.z)
 
-        self.osd_string = ('LON_' + str(round(self.view_lon,5)) + '__LAT_' + str(round(self.view_lat,5))+'_SK42LAT_'+str(sk_lat)+'_SK42LON_'+str(sk_lon)+"_"+self.targ_locked)
+        self.osd_string = ('LON_' + str(round(self.view_lon,5)) + '__LAT_' + str(round(self.view_lat,5))+'_SK42LON_'+str(sk_lon)+'_SK42LAT_'+str(sk_lat)+"_"+self.targ_locked)
 #        print(self.osd_string)
 
  
