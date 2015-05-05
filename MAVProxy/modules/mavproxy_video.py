@@ -11,6 +11,7 @@ from mplayer import Player, CmdPrefix
 from pymavlink.rotmat import Vector3, Matrix3, Plane, Line
 from math import radians
 from subprocess import call
+from pymavlink.wgstosk import WGPoint
 
 # setup board hw
 
@@ -142,8 +143,10 @@ class VideoModule(mp_module.MPModule):
             return None
 
         (self.view_lat, self.view_lon) = mp_util.gps_offset(lat, lon, pt.y, pt.x)
+        wgspoint = WGSPoint()
+        (sk_lat, sk_lon) = wgspoint.WGS84_SK42(self.view_lat, self.view_lon, pt.z)
 
-        self.osd_string = ('LON_' + str(round(self.view_lon,5)) + '__LAT_' + str(round(self.view_lat,5))+'_'+self.targ_locked)
+        self.osd_string = ('LON_' + str(round(self.view_lon,5)) + '__LAT_' + str(round(self.view_lat,5))+'_SK42LAT_'+str(sk_lat)+'_SK42LON_'+str(sk_lon)+"_"+self.targ_locked)
 #        print(self.osd_string)
 
  
