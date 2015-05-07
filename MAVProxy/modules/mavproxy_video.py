@@ -11,7 +11,7 @@ from mplayer import Player, CmdPrefix
 from pymavlink.rotmat import Vector3, Matrix3, Plane, Line
 from math import radians
 from subprocess import call
-from pymavlink.wgstosk import WGPoint
+#from pymavlink.wgstosk import WGSPoint
 
 # setup board hw
 
@@ -97,15 +97,19 @@ class VideoModule(mp_module.MPModule):
         gpi = self.master.messages['GLOBAL_POSITION_INT']
         att = self.master.messages['ATTITUDE']
         vehicle_dcm = Matrix3()
-        vehicle_dcm.from_euler(0, 0, att.yaw)
+#        vehicle_dcm.from_euler(0, 0, att.yaw)
 
         rotmat_copter_gimbal = Matrix3()
-        rotmat_copter_gimbal.from_euler312(radians(m.pointing_a/100), radians(m.pointing_b/100), 0)
-        gimbal_dcm = vehicle_dcm * rotmat_copter_gimbal
-
+        rotmat_copter_gimbal.from_euler(radians(m.pointing_b/100), radians(-m.pointing_a/100), att.yaw)
+#        gimbal_dcm = vehicle_dcm * rotmat_copter_gimbal
+	gimbal_dcm = rotmat_copter_gimbal
+#	print (gimbal_dcm)
+#	print(m.pointing_a)
+	
         lat = gpi.lat * 1.0e-7
         lon = gpi.lon * 1.0e-7
-        alt = gpi.relative_alt * 1.0e-3
+#        alt = gpi.relative_alt * 1.0e-3
+	alt = 500
 	
 
 	if gpi.lat == 0 :
@@ -143,13 +147,17 @@ class VideoModule(mp_module.MPModule):
             return None
 
         (self.view_lat, self.view_lon) = mp_util.gps_offset(lat, lon, pt.y, pt.x)
-        wgspoint = WGSPoint()
-        (sk_lat, sk_lon) = wgspoint.WGS84_SK42(self.view_lat, self.view_lon, pt.z)
+#        wgspoint = WGSPoint()
+#        (sk_lat, sk_lon) = wgspoint.WGS84_SK42(self.view_lat, self.view_lon, pt.z)
 
-        self.osd_string = ('LON_' + str(round(self.view_lon,5)) + '__LAT_' + str(round(self.view_lat,5))+'_SK42LON_'+str(sk_lon)+'_SK42LAT_'+str(sk_lat)+"_"+self.targ_locked)
+	self.osd_string = ('LON_' + str(round(self.view_lon,5)) + '__LAT_' + str(round(self.view_lat,5)))
+#        self.osd_string = ('LON_' + str(round(self.view_lon,5)) + '__LAT_' + str(round(self.view_lat,5))+'_SK42LON_'+str(sk_lon)+'_SK42LAT_'+str(sk_lat)+"_"+self.targ_locked)
 #        print(self.osd_string)
 
- 
+        icon = self.mpstate.map.icon('camera-small-red.png')
+        self.mpstate.map.add_object(mp_slipmap.SlipIcon('gimbalview',
+                                                        (view_lat,view_lon),
+                                                        icon, layer='GimbalView', rotation=0, follow=False))
 
     def cmd_gimbal_roi(self):
         '''control roi position'''
