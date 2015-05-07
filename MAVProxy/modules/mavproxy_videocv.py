@@ -4,6 +4,10 @@
 
 import os, sys, math, time
 import cv2
+import pingo
+from pymavlink.rotmat import Vector3, Matrix3, Plane, Line
+from math import radians
+from pymavlink.wgstosk import WGSPoint
 
 #from MAVProxy.modules.lib import wxconsole
 from MAVProxy.modules.lib import textconsole
@@ -24,7 +28,10 @@ class VideoCV(mp_module.MPModule):
         self.total_time = 0.0
         self.speed = 0
         self.max_link_num = 0
-
+        self.view_lat = None
+        self.view_lon = None
+        self.sk_lat = None
+        self.sk_lon = None
         # setup some default status information
 
         self.gps_status = Value('GPS', 'GPS: --', fg='red')
@@ -53,8 +60,10 @@ class VideoCV(mp_module.MPModule):
         self.etr = Value('ETR', 'ETR --', fg='white')
         self.homedist = Value('HomeDist', 'Home_Distance ---', fg='white')
 
-
-
+        self.target_position_lat = Value('Target_lat', 'LAT -----', fg='white')
+        self.target_position_lon = Value('Target lon', 'LON ------', fg='white')
+        self.target_positionsk_lat = Value('TargetSK_lat', 'LAT -----', fg='white')
+        self.target_positionsk_lon = Value('TargetSK_lon', 'LON ------', fg='white')
 
     def estimated_time_remaining(self, lat, lon, wpnum, speed):
         '''estimate time remaining in mission in seconds'''
@@ -164,7 +173,6 @@ class VideoCV(mp_module.MPModule):
             self.alt.write('Alt', 'Alt %u' % rel_alt)
             self.airspeed.write('AirSpeed', 'AirSpeed %u' % msg.airspeed)
             self.gpsspeed.write('GPSSpeed', 'GPSSpeed %u' % msg.groundspeed)
-#            self.VideoCV.set_status('Thr', 'Thr %u' % msg.throttle)
             t = time.localtime(msg._timestamp)
             if msg.groundspeed > 3 and not self.in_air:
                 self.in_air = True
@@ -176,9 +184,6 @@ class VideoCV(mp_module.MPModule):
                 self.in_air = False
                 self.total_time = time.mktime(t) - self.start_time
                 self.flighttime.write('FlightTime', 'FlightTime %u:%02u' % (int(self.total_time)/60, int(self.total_time)%60))
-#        elif type == 'ATTITUDE':
-#            self.VideoCV.set_status('Roll', 'Roll %u' % math.degrees(msg.roll))
-#            self.VideoCV.set_status('Pitch', 'Pitch %u' % math.degrees(msg.pitch))
         elif type in ['SYS_STATUS']:
             sensors = { 'AS'   : mavutil.mavlink.MAV_SYS_STATUS_SENSOR_DIFFERENTIAL_PRESSURE,
                         'MAG'  : mavutil.mavlink.MAV_SYS_STATUS_SENSOR_3D_MAG,
@@ -216,30 +221,6 @@ class VideoCV(mp_module.MPModule):
         elif type == 'WIND':
             self.wind.write('Wind', 'Wind %u/%.2f' % (msg.direction, msg.speed))
 
-#        elif type == 'HWSTATUS':
-#            if msg.Vcc >= 4600 and msg.Vcc <= 5300:
-#                fg = 'darkgreen'
-#            else:
-#                fg = 'red'
-#            self.VideoCV.set_status('Vcc', 'Vcc %.2f' % (msg.Vcc * 0.001), fg=fg)
-#        elif type == 'POWER_STATUS':
-#            if msg.flags & mavutil.mavlink.MAV_POWER_STATUS_CHANGED:
-#                fg = 'red'
-#            else:
-#                fg = 'darkgreen'
-#            status = 'PWR:'
-#            if msg.flags & mavutil.mavlink.MAV_POWER_STATUS_USB_CONNECTED:
-#                status += 'U'
-#            if msg.flags & mavutil.mavlink.MAV_POWER_STATUS_BRICK_VALID:
-#                status += 'B'
-#            if msg.flags & mavutil.mavlink.MAV_POWER_STATUS_SERVO_VALID:
-#                status += 'S'
-#            if msg.flags & mavutil.mavlink.MAV_POWER_STATUS_PERIPH_OVERCURRENT:
-#                status += 'O1'
-#            if msg.flags & mavutil.mavlink.MAV_POWER_STATUS_PERIPH_HIPOWER_OVERCURRENT:
-#                status += 'O2'
-#            self.VideoCV.set_status('PWR', status, fg=fg)
-#            self.VideoCV.set_status('Srv', 'Srv %.2f' % (msg.Vservo*0.001), fg='darkgreen')
         elif type in ['RADIO', 'RADIO_STATUS']:
             if msg.rssi < msg.noise+10 or msg.remrssi < msg.remnoise+10:
                 fg = 'red'
@@ -248,27 +229,6 @@ class VideoCV(mp_module.MPModule):
             self.radio_status.write('Radio', 'Radio %u/%u %u/%u' % (msg.rssi, msg.noise, msg.remrssi, msg.remnoise), fg=fg)
         elif type == 'HEARTBEAT':
             self.uav_mode.write('Mode', '%s' % master.flightmode, fg='blue')
-#            if self.max_link_num != len(self.mpstate.mav_master):
-#                for i in range(self.max_link_num):
-#                    self.link%i_status = Value('Link%u'%(i+1), '', fg='grey')
-#                self.max_link_num = len(self.mpstate.mav_master)
-#            for m in self.mpstate.mav_master:
-#                linkdelay = (self.mpstate.status.highest_msec - m.highest_msec)*1.0e-3
-#                linkline = "Link %u " % (m.linknum+1)
-#                if m.linkerror:
-#                    linkline += "down"
-#                    fg = 'red'
-#                else:
-#                    packets_rcvd_percentage = 100
-#                    if (m.mav_loss != 0): #avoid divide-by-zero
-#                        packets_rcvd_percentage = (1.0 - (float(m.mav_loss) / float(m.mav_count))) * 100.0
-#
-#                    linkline += "OK (%u pkts, %.2fs delay, %u lost) %u%%" % (m.mav_count, linkdelay, m.mav_loss, packets_rcvd_percentage)
-#                    if linkdelay > 1:
-#                        fg = 'orange'
-#                    else:
-#                        fg = 'darkgreen'
-#                self.VideoCV.set_status('Link%u'%m.linknum, linkline, row=1, fg=fg)
         elif type in ['WAYPOINT_CURRENT', 'MISSION_CURRENT']:
             self.wp.write('WP', 'WP %u' % msg.seq)
             lat = master.field('GLOBAL_POSITION_INT', 'lat', 0) * 1.0e-7
@@ -296,6 +256,106 @@ class VideoCV(mp_module.MPModule):
                 aspd_error_sign = "H"
             self.alterror.write('AltError', 'AltError %d%s' % (msg.alt_error, alt_error_sign))
             self.aspderror.write('AspdError', 'AspdError %.1f%s' % (msg.aspd_error*0.01, aspd_error_sign))
+
+        elif type == 'MOUNT_REPORT':
+
+            needed = ['GLOBAL_POSITION_INT', 'ATTITUDE']
+            for n in needed:
+                if not n in self.master.messages:
+                    return
+
+            gpi = self.master.messages['GLOBAL_POSITION_INT']
+            att = self.master.messages['ATTITUDE']
+
+            rotmat_copter_gimbal = Matrix3()
+            rotmat_copter_gimbal.from_euler312(radians(m.pointing_b/100), radians(m.pointing_a/100), att.yaw)
+            gimbal_dcm = rotmat_copter_gimbal
+
+            lat = gpi.lat * 1.0e-7
+            lon = gpi.lon * 1.0e-7
+            alt = gpi.relative_alt * 1.0e-3
+
+            if gpi.lat == 0:
+                return
+
+            # ground plane
+            ground_plane = Plane()
+
+            # the position of the camera in the air, remembering its a right
+            # hand coordinate system, so +ve z is down
+            camera_point = Vector3(0, 0, -alt)
+
+            # get view point of camera when not rotated
+            view_point = Vector3(1, 0, 0)
+
+
+            # rotate view_point to form current view vector
+            rot_point = gimbal_dcm * view_point
+
+            # a line from the camera to the ground
+            line = Line(camera_point, rot_point)
+
+            # find the intersection with the ground
+            pt = line.plane_intersection(ground_plane, forward_only=True)
+            if pt is None:
+                # its pointing up into the sky
+
+                self.view_lat = 'LAT ------'
+                self.view_lon = 'LON ------'
+                self.sk_lat = 'LAT ------'
+                self.sk_lon = 'LON ------'
+
+            else:
+                (view_lat, view_lon) = mp_util.gps_offset(lat, lon, pt.y, pt.x)
+                self.view_lat = 'LAT '+str(view_lat)
+                self.view_lon = 'LON '+str(view_lon)
+                wgspoint = WGSPoint()
+                (sk_lat, sk_lon) = wgspoint.WGS84_SK42(self.view_lat, self.view_lon, pt.z)
+                (sk_lat_deg, sk_lat_min, sk_lat_sec) = self.decdeg2dms(sk_lat)
+                (sk_lon_deg, sk_lon_min, sk_lon_sec) = self.decdeg2dms(sk_lon)
+                self.sk_lat = 'LAT '+str(sk_lat_deg)+'d'+str(sk_lat_min)+"'"+str(sk_lat_sec)+'"'
+                self.sk_lon = 'LON '+str(sk_lon_deg)+'d'+str(sk_lon_min)+"'"+str(sk_lon_sec)+"'"
+
+                self.target_position_lat.write('Target_lat', self.view_lat, fg='white')
+                self.target_position_lon.write('Target lon', self.view_lon, fg='white')
+                self.target_positionsk_lat.write('TargetSK_lat', self.sk_lat, fg='white')
+                self.target_positionsk_lon.write('TargetSK_lon', self.sk_lon, fg='white')
+
+    def decdeg2dms(self, dd):
+        '''convert decimal degree to degree minutes sec'''
+
+        mnt,sec = divmod(dd*3600, 60)
+        deg,mnt = divmod(mnt, 60)
+        return int(deg), int(mnt), int(sec)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
