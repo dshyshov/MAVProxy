@@ -9,3 +9,8 @@ class Value():
         self.name = name
         self.text = text
         self.fg = fg
+
+    def write(self, name, text, fg='black'):
+        self.name = name
+        self.text = text
+        self.fg = fg

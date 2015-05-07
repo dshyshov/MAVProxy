@@ -7,11 +7,12 @@ import pingo
 from pymavlink import mavutil
 from MAVProxy.modules.lib import mp_module
 from MAVProxy.modules.lib import mp_util
+from MAVProxy.modules.mavproxy_map import mp_slipmap
 from mplayer import Player, CmdPrefix
 from pymavlink.rotmat import Vector3, Matrix3, Plane, Line
 from math import radians
 from subprocess import call
-#from pymavlink.wgstosk import WGSPoint
+from pymavlink.wgstosk import WGSPoint
 
 # setup board hw
 
@@ -28,7 +29,7 @@ btn_lock_targ.mode = pingo.IN
 class VideoModule(mp_module.MPModule):
     def __init__(self, mpstate):
         super(VideoModule, self).__init__(mpstate, "video", "video downlink", public=True)
-        self.player = Player('-vo xv -tv driver=v4l2:input=1:device=/dev/video1 tv:// -vf expand=::200::1:,rectangle=30:30:345:273,screenshot -subfont-osd-scale 2')
+        self.player = Player('-vo xv -tv driver=v4l2:input=1:device=/dev/video1 tv:// -vf expand=::200::1:,rectangle=30:30:345:273,screenshot -subfont-osd-scale 1.5')
         self.osd_string = 'Bla'
         self.osd_string_old = ''
         self.player.fullscreen = True
@@ -100,7 +101,7 @@ class VideoModule(mp_module.MPModule):
 #        vehicle_dcm.from_euler(0, 0, att.yaw)
 
         rotmat_copter_gimbal = Matrix3()
-        rotmat_copter_gimbal.from_euler(radians(m.pointing_b/100), radians(-m.pointing_a/100), att.yaw)
+        rotmat_copter_gimbal.from_euler312(radians(m.pointing_b/100), radians(m.pointing_a/100), att.yaw)
 #        gimbal_dcm = vehicle_dcm * rotmat_copter_gimbal
 	gimbal_dcm = rotmat_copter_gimbal
 #	print (gimbal_dcm)
@@ -147,16 +148,18 @@ class VideoModule(mp_module.MPModule):
             return None
 
         (self.view_lat, self.view_lon) = mp_util.gps_offset(lat, lon, pt.y, pt.x)
-#        wgspoint = WGSPoint()
-#        (sk_lat, sk_lon) = wgspoint.WGS84_SK42(self.view_lat, self.view_lon, pt.z)
+        wgspoint = WGSPoint()
+        (sk_lat, sk_lon) = wgspoint.WGS84_SK42(self.view_lat, self.view_lon, pt.z)
+	(sk_lat_deg, sk_lat_min, sk_lat_sec) = self.decdeg2dms(sk_lat)
+	(sk_lon_deg, sk_lon_min, sk_lon_sec) = self.decdeg2dms(sk_lon)
 
-	self.osd_string = ('LON_' + str(round(self.view_lon,5)) + '__LAT_' + str(round(self.view_lat,5)))
-#        self.osd_string = ('LON_' + str(round(self.view_lon,5)) + '__LAT_' + str(round(self.view_lat,5))+'_SK42LON_'+str(sk_lon)+'_SK42LAT_'+str(sk_lat)+"_"+self.targ_locked)
+#	self.osd_string = ('LON_' + str(round(self.view_lon,5)) + '__LAT_' + str(round(self.view_lat,5)))
+        self.osd_string = ('LON_' + str(round(self.view_lon,5)) + '__LAT_' + str(round(self.view_lat,5))+'_SKLON_'+str(sk_lon_deg)+'d'+str(sk_lon_min)+"'"+str(sk_lon_sec)+'"_SKLAT_'+str(sk_lat_deg)+'d'+str(sk_lat_min)+"'"+str(sk_lat_sec)+'"_'+self.targ_locked)
 #        print(self.osd_string)
 
         icon = self.mpstate.map.icon('camera-small-red.png')
         self.mpstate.map.add_object(mp_slipmap.SlipIcon('gimbalview',
-                                                        (view_lat,view_lon),
+                                                        (self.view_lat,self.view_lon),
                                                         icon, layer='GimbalView', rotation=0, follow=False))
 
     def cmd_gimbal_roi(self):
@@ -189,6 +192,13 @@ class VideoModule(mp_module.MPModule):
                                            0)
             
 
+    def decdeg2dms(self,dd):
+	'''convert decimal degree to degree minutes sec'''
+
+	mnt,sec = divmod(dd*3600,60)
+	deg,mnt = divmod(mnt,60)
+	return int(deg),int(mnt),int(sec)
+	
 
 def init(mpstate):
 

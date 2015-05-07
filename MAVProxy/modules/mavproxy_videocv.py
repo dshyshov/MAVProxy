@@ -5,12 +5,13 @@
 import os, sys, math, time
 import cv2
 
-from MAVProxy.modules.lib import wxconsole
+#from MAVProxy.modules.lib import wxconsole
 from MAVProxy.modules.lib import textconsole
 from MAVProxy.modules.mavproxy_map import mp_elevation
 from pymavlink import mavutil
 from MAVProxy.modules.lib import mp_util
 from MAVProxy.modules.lib import mp_module
+from MAVProxy.modules.lib.mp_video import Value
 
 from MAVProxy.modules.lib.mp_menu import *
 
@@ -26,31 +27,31 @@ class VideoCV(mp_module.MPModule):
 
         # setup some default status information
 
-        mpstate.VideoCV.set_status('GPS', 'GPS: --', fg='red', row=0)
+        self.gps_status = Value('GPS', 'GPS: --', fg='red')
 
-        mpstate.VideoCV.set_status('Radio', 'Radio: --', row=0)
-        mpstate.VideoCV.set_status('INS', 'INS', fg='grey', row=0)
-        mpstate.VideoCV.set_status('MAG', 'MAG', fg='grey', row=0)
-        mpstate.VideoCV.set_status('AS', 'AS', fg='grey', row=0)
+        self.radio_status = Value('Radio', 'Radio: --', fg='gray')
+        self.ins_status = Value('INS', 'INS', fg='grey')
+        self.mag_status = Value('MAG', 'MAG', fg='grey')
+        self.as_status = Value('AS', 'AS', fg='grey')
+        self.rng_status = Value('RNG', 'RNG', fg='grey')
+        self.ahrs_status = Value('AHRS', 'AHRS', fg='grey')
+        self.terr_status = Value('TERR', 'TERR', fg='grey')
+        self.alt = Value('Alt', 'Alt ---')
+        self.uav_mode = Value('UNKNOWN', 'UNKNOWN', fg='grey')
+        self.airspeed = Value('AirSpeed', 'AirSpeed --', fg='white' )
+        self.gpsspeed = Value('GPSSpeed', 'GPSSpeed --', fg='white')
 
-        mpstate.VideoCV.set_status('AHRS', 'AHRS', fg='grey', row=0)
-
-        mpstate.VideoCV.set_status('Alt', 'Alt ---', row=2)
-        mpstate.VideoCV.set_status('AGL', 'AGL ---/---', row=2)
-        mpstate.VideoCV.set_status('AirSpeed', 'AirSpeed --', row=2)
-        mpstate.VideoCV.set_status('GPSSpeed', 'GPSSpeed --', row=2)
 
 
-
-        mpstate.VideoCV.set_status('Wind', 'Wind ---/---', row=2)
-        mpstate.VideoCV.set_status('WP', 'WP --', row=3)
-        mpstate.VideoCV.set_status('WPDist', 'Distance ---', row=3)
-        mpstate.VideoCV.set_status('WPBearing', 'Bearing ---', row=3)
-        mpstate.VideoCV.set_status('AltError', 'AltError --', row=3)
-        mpstate.VideoCV.set_status('AspdError', 'AspdError --', row=3)
-        mpstate.VideoCV.set_status('FlightTime', 'FlightTime --', row=3)
-        mpstate.VideoCV.set_status('ETR', 'ETR --', row=3)
-        mpstate.VideoCV.set_status('HomeDist', 'Home_Distance ---', row=3)
+        self.wind = Value('Wind', 'Wind ---/---', fg='white')
+        self.wp = Value('WP', 'WP --', fg='white')
+        self.wpdist = Value('WPDist', 'Distance ---', fg='white')
+        self.wpbearing = Value('WPBearing', 'Bearing ---', fg='white')
+        self.alterror = Value('AltError', 'AltError --', fg='white')
+        self.aspderror = Value('AspdError', 'AspdError --', fg='white')
+        self.flighttime = Value('FlightTime', 'FlightTime --', fg='white')
+        self.etr = Value('ETR', 'ETR --', fg='white')
+        self.homedist = Value('HomeDist', 'Home_Distance ---', fg='white')
 
 
 
@@ -88,11 +89,7 @@ class VideoCV(mp_module.MPModule):
 
     def mavlink_packet(self, msg):
         '''handle an incoming mavlink packet'''
-        if not isinstance(self.VideoCV, wxconsole.MessageConsole):
-            return
-        if not self.console.is_alive():
-            self.mpstate.console = textconsole.SimpleConsole()
-            return
+
         type = msg.get_type()
 
         master = self.master
@@ -108,7 +105,7 @@ class VideoCV(mp_module.MPModule):
                 curr_lat = msg.lat * 1.0e-7
                 curr_lon = msg.lon * 1.0e-7
                 home_dist = mp_util.gps_distance(curr_lat, curr_lon, home_lat, home_lng)
-                self.VideoCV.set_status('HomeDist', 'HomeDist %u' % home_dist)
+                self.homedist.write('HomeDist', 'HomeDist %u' % home_dist)
 
         if type in [ 'GPS_RAW', 'GPS_RAW_INT' ]:
             if type == "GPS_RAW":
@@ -122,14 +119,14 @@ class VideoCV(mp_module.MPModule):
                 sats_string = "%u/%u" % (num_sats1, num_sats2)
             if ((msg.fix_type == 3 and master.mavlink10()) or
                 (msg.fix_type == 2 and not master.mavlink10())):
-                self.VideoCV.set_status('GPS', 'GPS: OK (%s)' % sats_string, fg='darkgreen')
+                self.gps_status.write('GPS', 'GPS: OK (%s)' % sats_string, fg='darkgreen')
             else:
-                self.VideoCV.set_status('GPS', 'GPS: %u (%s)' % (msg.fix_type, sats_string), fg='red')
-            if master.mavlink10():
-                gps_heading = int(self.mpstate.status.msgs['GPS_RAW_INT'].cog * 0.01)
-            else:
-                gps_heading = self.mpstate.status.msgs['GPS_RAW'].hdg
-            self.VideoCV.set_status('Heading', 'Hdg %s/%u' % (master.field('VFR_HUD', 'heading', '-'), gps_heading))
+                self.gps_status.write('GPS', 'GPS: %u (%s)' % (msg.fix_type, sats_string), fg='red')
+
+
+
+
+
         elif type == 'VFR_HUD':
             if master.mavlink10():
                 alt = master.field('GPS_RAW_INT', 'alt', 0) / 1.0e3
@@ -163,25 +160,25 @@ class VideoCV(mp_module.MPModule):
                     vehicle_agl = '---'
                 else:
                     vehicle_agl = int(vehicle_agl)
-                self.VideoCV.set_status('AGL', 'AGL %u/%s' % (agl_alt, vehicle_agl))
-            self.VideoCV.set_status('Alt', 'Alt %u' % rel_alt)
-            self.VideoCV.set_status('AirSpeed', 'AirSpeed %u' % msg.airspeed)
-            self.VideoCV.set_status('GPSSpeed', 'GPSSpeed %u' % msg.groundspeed)
-            self.VideoCV.set_status('Thr', 'Thr %u' % msg.throttle)
+#                self.VideoCV.set_status('AGL', 'AGL %u/%s' % (agl_alt, vehicle_agl))
+            self.alt.write('Alt', 'Alt %u' % rel_alt)
+            self.airspeed.write('AirSpeed', 'AirSpeed %u' % msg.airspeed)
+            self.gpsspeed.write('GPSSpeed', 'GPSSpeed %u' % msg.groundspeed)
+#            self.VideoCV.set_status('Thr', 'Thr %u' % msg.throttle)
             t = time.localtime(msg._timestamp)
             if msg.groundspeed > 3 and not self.in_air:
                 self.in_air = True
                 self.start_time = time.mktime(t)
             elif msg.groundspeed > 3 and self.in_air:
                 self.total_time = time.mktime(t) - self.start_time
-                self.VideoCV.set_status('FlightTime', 'FlightTime %u:%02u' % (int(self.total_time)/60, int(self.total_time)%60))
+                self.flighttime.write('FlightTime', 'FlightTime %u:%02u' % (int(self.total_time)/60, int(self.total_time)%60))
             elif msg.groundspeed < 3 and self.in_air:
                 self.in_air = False
                 self.total_time = time.mktime(t) - self.start_time
-                self.VideoCV.set_status('FlightTime', 'FlightTime %u:%02u' % (int(self.total_time)/60, int(self.total_time)%60))
-        elif type == 'ATTITUDE':
-            self.VideoCV.set_status('Roll', 'Roll %u' % math.degrees(msg.roll))
-            self.VideoCV.set_status('Pitch', 'Pitch %u' % math.degrees(msg.pitch))
+                self.flighttime.write('FlightTime', 'FlightTime %u:%02u' % (int(self.total_time)/60, int(self.total_time)%60))
+#        elif type == 'ATTITUDE':
+#            self.VideoCV.set_status('Roll', 'Roll %u' % math.degrees(msg.roll))
+#            self.VideoCV.set_status('Pitch', 'Pitch %u' % math.degrees(msg.pitch))
         elif type in ['SYS_STATUS']:
             sensors = { 'AS'   : mavutil.mavlink.MAV_SYS_STATUS_SENSOR_DIFFERENTIAL_PRESSURE,
                         'MAG'  : mavutil.mavlink.MAV_SYS_STATUS_SENSOR_3D_MAG,
@@ -202,66 +199,78 @@ class VideoCV(mp_module.MPModule):
                 # for terrain show yellow if still loading
                 if s == 'TERR' and fg == 'darkgreen' and master.field('TERRAIN_REPORT', 'pending', 0) != 0:
                     fg = 'yellow'
-                self.VideoCV.set_status(s, s, fg=fg)
+                if s == 'AS':
+                    self.as_status.write(s, s, fg=fg)
+                elif s == 'MAG' :
+                    self.mag_status.write(s, s, fg=fg)
+                elif s == 'INS' :
+                    self.mag_status.write(s, s, fg=fg)
+                elif s == 'AHRS' :
+                    self.ahrs_status.write(s, s, fg=fg)
+                elif s == 'TERR':
+                    self.terr_status.write(s, s, fg=fg)
+                elif s == 'RNG':
+                    self.rng_status.write(s, s, fg=fg)
+
 
         elif type == 'WIND':
-            self.VideoCV.set_status('Wind', 'Wind %u/%.2f' % (msg.direction, msg.speed))
+            self.wind.write('Wind', 'Wind %u/%.2f' % (msg.direction, msg.speed))
 
-        elif type == 'HWSTATUS':
-            if msg.Vcc >= 4600 and msg.Vcc <= 5300:
-                fg = 'darkgreen'
-            else:
-                fg = 'red'
-            self.VideoCV.set_status('Vcc', 'Vcc %.2f' % (msg.Vcc * 0.001), fg=fg)
-        elif type == 'POWER_STATUS':
-            if msg.flags & mavutil.mavlink.MAV_POWER_STATUS_CHANGED:
-                fg = 'red'
-            else:
-                fg = 'darkgreen'
-            status = 'PWR:'
-            if msg.flags & mavutil.mavlink.MAV_POWER_STATUS_USB_CONNECTED:
-                status += 'U'
-            if msg.flags & mavutil.mavlink.MAV_POWER_STATUS_BRICK_VALID:
-                status += 'B'
-            if msg.flags & mavutil.mavlink.MAV_POWER_STATUS_SERVO_VALID:
-                status += 'S'
-            if msg.flags & mavutil.mavlink.MAV_POWER_STATUS_PERIPH_OVERCURRENT:
-                status += 'O1'
-            if msg.flags & mavutil.mavlink.MAV_POWER_STATUS_PERIPH_HIPOWER_OVERCURRENT:
-                status += 'O2'
-            self.VideoCV.set_status('PWR', status, fg=fg)
-            self.VideoCV.set_status('Srv', 'Srv %.2f' % (msg.Vservo*0.001), fg='darkgreen')
+#        elif type == 'HWSTATUS':
+#            if msg.Vcc >= 4600 and msg.Vcc <= 5300:
+#                fg = 'darkgreen'
+#            else:
+#                fg = 'red'
+#            self.VideoCV.set_status('Vcc', 'Vcc %.2f' % (msg.Vcc * 0.001), fg=fg)
+#        elif type == 'POWER_STATUS':
+#            if msg.flags & mavutil.mavlink.MAV_POWER_STATUS_CHANGED:
+#                fg = 'red'
+#            else:
+#                fg = 'darkgreen'
+#            status = 'PWR:'
+#            if msg.flags & mavutil.mavlink.MAV_POWER_STATUS_USB_CONNECTED:
+#                status += 'U'
+#            if msg.flags & mavutil.mavlink.MAV_POWER_STATUS_BRICK_VALID:
+#                status += 'B'
+#            if msg.flags & mavutil.mavlink.MAV_POWER_STATUS_SERVO_VALID:
+#                status += 'S'
+#            if msg.flags & mavutil.mavlink.MAV_POWER_STATUS_PERIPH_OVERCURRENT:
+#                status += 'O1'
+#            if msg.flags & mavutil.mavlink.MAV_POWER_STATUS_PERIPH_HIPOWER_OVERCURRENT:
+#                status += 'O2'
+#            self.VideoCV.set_status('PWR', status, fg=fg)
+#            self.VideoCV.set_status('Srv', 'Srv %.2f' % (msg.Vservo*0.001), fg='darkgreen')
         elif type in ['RADIO', 'RADIO_STATUS']:
             if msg.rssi < msg.noise+10 or msg.remrssi < msg.remnoise+10:
                 fg = 'red'
             else:
                 fg = 'black'
-            self.VideoCV.set_status('Radio', 'Radio %u/%u %u/%u' % (msg.rssi, msg.noise, msg.remrssi, msg.remnoise), fg=fg)
+            self.radio_status.write('Radio', 'Radio %u/%u %u/%u' % (msg.rssi, msg.noise, msg.remrssi, msg.remnoise), fg=fg)
         elif type == 'HEARTBEAT':
-            self.VideoCV.set_status('Mode', '%s' % master.flightmode, fg='blue')
-            if self.max_link_num != len(self.mpstate.mav_master):
-                for i in range(self.max_link_num):
-                    self.VideoCV.set_status('Link%u'%(i+1), '', row=1)
-                self.max_link_num = len(self.mpstate.mav_master)
-            for m in self.mpstate.mav_master:
-                linkdelay = (self.mpstate.status.highest_msec - m.highest_msec)*1.0e-3
-                linkline = "Link %u " % (m.linknum+1)
-                if m.linkerror:
-                    linkline += "down"
-                    fg = 'red'
-                else:
-                    packets_rcvd_percentage = 100
-                    if (m.mav_loss != 0): #avoid divide-by-zero
-                        packets_rcvd_percentage = (1.0 - (float(m.mav_loss) / float(m.mav_count))) * 100.0
-
-                    linkline += "OK (%u pkts, %.2fs delay, %u lost) %u%%" % (m.mav_count, linkdelay, m.mav_loss, packets_rcvd_percentage)
-                    if linkdelay > 1:
-                        fg = 'orange'
-                    else:
-                        fg = 'darkgreen'
-                self.VideoCV.set_status('Link%u'%m.linknum, linkline, row=1, fg=fg)
+            self.uav_mode.write('Mode', '%s' % master.flightmode, fg='blue')
+#            if self.max_link_num != len(self.mpstate.mav_master):
+#                for i in range(self.max_link_num):
+#                    self.link%i_status = Value('Link%u'%(i+1), '', fg='grey')
+#                self.max_link_num = len(self.mpstate.mav_master)
+#            for m in self.mpstate.mav_master:
+#                linkdelay = (self.mpstate.status.highest_msec - m.highest_msec)*1.0e-3
+#                linkline = "Link %u " % (m.linknum+1)
+#                if m.linkerror:
+#                    linkline += "down"
+#                    fg = 'red'
+#                else:
+#                    packets_rcvd_percentage = 100
+#                    if (m.mav_loss != 0): #avoid divide-by-zero
+#                        packets_rcvd_percentage = (1.0 - (float(m.mav_loss) / float(m.mav_count))) * 100.0
+#
+#                    linkline += "OK (%u pkts, %.2fs delay, %u lost) %u%%" % (m.mav_count, linkdelay, m.mav_loss, packets_rcvd_percentage)
+#                    if linkdelay > 1:
+#                        fg = 'orange'
+#                    else:
+#                        fg = 'darkgreen'
+#                self.VideoCV.set_status('Link%u'%m.linknum, linkline, row=1, fg=fg)
         elif type in ['WAYPOINT_CURRENT', 'MISSION_CURRENT']:
-            self.VideoCV.set_status('WP', 'WP %u' % msg.seq)
+            self.wp.write('WP', 'WP %u' % msg.seq)
             lat = master.field('GLOBAL_POSITION_INT', 'lat', 0) * 1.0e-7
             lng = master.field('GLOBAL_POSITION_INT', 'lon', 0) * 1.0e-7
             if lat != 0 and lng != 0:
@@ -272,11 +281,11 @@ class VideoCV(mp_module.MPModule):
                     self.speed = 0.98*self.speed + 0.02*airspeed
                 self.speed = max(1, self.speed)
                 time_remaining = int(self.estimated_time_remaining(lat, lng, msg.seq, self.speed))
-                self.VideoCV.set_status('ETR', 'ETR %u:%02u' % (time_remaining/60, time_remaining%60))
+                self.etr.write('ETR', 'ETR %u:%02u' % (time_remaining/60, time_remaining%60))
 
         elif type == 'NAV_CONTROLLER_OUTPUT':
-            self.VideoCV.set_status('WPDist', 'Distance %u' % msg.wp_dist)
-            self.VideoCV.set_status('WPBearing', 'Bearing %u' % msg.target_bearing)
+            self.wpdist.write('WPDist', 'Distance %u' % msg.wp_dist)
+            self.wpbearing.write('WPBearing', 'Bearing %u' % msg.target_bearing)
             if msg.alt_error > 0:
                 alt_error_sign = "L"
             else:
@@ -285,8 +294,11 @@ class VideoCV(mp_module.MPModule):
                 aspd_error_sign = "L"
             else:
                 aspd_error_sign = "H"
-            self.VideoCV.set_status('AltError', 'AltError %d%s' % (msg.alt_error, alt_error_sign))
-            self.VideoCV.set_status('AspdError', 'AspdError %.1f%s' % (msg.aspd_error*0.01, aspd_error_sign))
+            self.alterror.write('AltError', 'AltError %d%s' % (msg.alt_error, alt_error_sign))
+            self.aspderror.write('AspdError', 'AspdError %.1f%s' % (msg.aspd_error*0.01, aspd_error_sign))
+
+
+
 
 def init(mpstate):
     '''initialise module'''
