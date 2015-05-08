@@ -7,7 +7,7 @@ import cv2
 import pingo
 from pymavlink.rotmat import Vector3, Matrix3, Plane, Line
 from math import radians
-from pymavlink.wgstosk import WGSPoint
+from pymavlink.wgstosk import *
 
 #from MAVProxy.modules.lib import wxconsole
 from MAVProxy.modules.lib import textconsole
@@ -32,10 +32,14 @@ class VideoCV(mp_module.MPModule):
         self.view_lon = None
         self.sk_lat = None
         self.sk_lon = None
+        self.have_target = False
+        self.cap = cv2.VideoCapture(0)
+        self.font = cv2.FONT_ITALIC
+
         # setup some default status information
 
-        self.gps_status = Value('GPS', 'GPS: --', fg='red')
-
+        self.gps_status = Value('GPS', 'GPS: --', fg='gray')
+        self.link_status = Value('Link','Link --', fg='gray')
         self.radio_status = Value('Radio', 'Radio: --', fg='gray')
         self.ins_status = Value('INS', 'INS', fg='grey')
         self.mag_status = Value('MAG', 'MAG', fg='grey')
@@ -47,7 +51,7 @@ class VideoCV(mp_module.MPModule):
         self.uav_mode = Value('UNKNOWN', 'UNKNOWN', fg='grey')
         self.airspeed = Value('AirSpeed', 'AirSpeed --', fg='white' )
         self.gpsspeed = Value('GPSSpeed', 'GPSSpeed --', fg='white')
-
+        self.targ_status = Value('Target','Unlocked', fg='green')
 
 
         self.wind = Value('Wind', 'Wind ---/---', fg='white')
@@ -64,6 +68,28 @@ class VideoCV(mp_module.MPModule):
         self.target_position_lon = Value('Target lon', 'LON ------', fg='white')
         self.target_positionsk_lat = Value('TargetSK_lat', 'LAT -----', fg='white')
         self.target_positionsk_lon = Value('TargetSK_lon', 'LON ------', fg='white')
+
+
+    def idle_task(self):
+
+        if self.master.linkerror == True :
+            self.link_status.write('Link','Link lost',fg='red')
+        else:
+            self.link_status.write('Link','Link OK',fg='green')
+
+        if btn_cap.state == pingo.HIGH:
+            time.sleep(0.1)
+            if btn_cap.state == pingo.HIGH:
+                self.cap_img()
+
+        if btn_lock_targ.state == pingo.HIGH:
+            time.sleep(0.1)
+            if btn_lock_targ.state == pingo.HIGH:
+                self.cmd_gimbal_roi()
+
+        self.showvideo()
+
+
 
     def estimated_time_remaining(self, lat, lon, wpnum, speed):
         '''estimate time remaining in mission in seconds'''
@@ -299,7 +325,7 @@ class VideoCV(mp_module.MPModule):
             pt = line.plane_intersection(ground_plane, forward_only=True)
             if pt is None:
                 # its pointing up into the sky
-
+                self.have_target = False
                 self.view_lat = 'LAT ------'
                 self.view_lon = 'LON ------'
                 self.sk_lat = 'LAT ------'
@@ -320,6 +346,7 @@ class VideoCV(mp_module.MPModule):
                 self.target_position_lon.write('Target lon', self.view_lon, fg='white')
                 self.target_positionsk_lat.write('TargetSK_lat', self.sk_lat, fg='white')
                 self.target_positionsk_lon.write('TargetSK_lon', self.sk_lon, fg='white')
+                self.have_target = True
 
     def decdeg2dms(self, dd):
         '''convert decimal degree to degree minutes sec'''
@@ -329,36 +356,89 @@ class VideoCV(mp_module.MPModule):
         return int(deg), int(mnt), int(sec)
 
 
+    def cmd_gimbal_roi(self):
+        '''control roi position'''
+
+        if self.have_target == False:
+            print("No target available")
+            return
+
+        mode = mavutil.mavlink.MAV_MOUNT_MODE_GPS_POINT
+        self.targ_status.write('Target', 'Locked', fg='Red')
+
+        self.master.mav.mount_configure_send(self.target_system,
+                                             self.target_component,
+                                             mode,
+                                             1, 1, 1)
+
+        self.master.mav.mount_control_send(self.target_system,
+                                           self.target_component,
+                                           latlon[0]*1e7,
+                                           latlon[1]*1e7,
+                                           0, # altitude zero for now
+                                           0)
 
 
 
+    def showvideo(self):
+        # Capture frame-by-frame
+        ret, frame = self.cap.read()
+
+        # Our operations on the frame come here
+        gray = cv2.cvtColor(frame, cv2.COLOR_BGRA2BGR)
+
+        #HUD
+        cv2.line(gray, (360, 263), (360, 313), (255, 255, 255), 1)
+        cv2.line(gray, (335, 288), (385, 288), (255, 255, 255), 1)
+        cv2.rectangle(gray, (20, 278), (80, 298), (255, 255, 255), 1)
+        cv2.putText(gray, 'AS', (20, 268), self.font, 0.5, (255, 255, 255), 1, cv2.CV_AA)
+        cv2.putText(gray, self.airspeed, (30, 293), self.font, 0.5, (255, 255, 255), 1, cv2.CV_AA)
+        cv2.rectangle(gray, (640, 278), (700, 298), (255, 255, 255), 1)
+        cv2.putText(gray, 'ALT', (640, 268), self.font, 0.5, (255, 255, 255), 1, cv2.CV_AA)
+        cv2.putText(gray, self.alt, (650, 293), self.font, 0.5, (255, 255, 255), 1, cv2.CV_AA)
+
+        #Add left black border
+        gray_bord = cv2.copyMakeBorder(gray, 0, 0, 304, 0, cv2.BORDER_CONSTANT, dst=None, value=(0, 0, 0))
+
+        #Target text Block
+        cv2.putText(gray_bord, 'Target', (25, 55), self.font, 0.4, (0, 125, 250), 1, cv2.CV_AA)
+        cv2.putText(gray_bord, self.targ_status.text, (75, 55), self.font, 0.4, (0, 125, 250), 1, cv2.CV_AA)
+        cv2.putText(gray_bord, self.target_position_lat.text+'  '+self.target_position_lon.text, (25,75), self.font, 0.4, (255, 255, 255), 1, cv2.CV_AA)
+        cv2.putText(gray_bord, self.target_positionsk_lat.text+'  '+self.target_positionsk_lon.text, (25, 95), self.font, 0.4, (255, 255, 255), 1, cv2.CV_AA)
+        cv2.line(gray_bord, (25, 110), (290, 110), (255, 255, 255), 1)
+        #GPS Status text Block
+        cv2.putText(gray_bord, self.gps_status.text, (25, 130), self.font, 0.4, self.gps_status.fg, 1, cv2.CV_AA)
+#        cv2.putText(gray_bord,'Satelites:0 Lock:No',(25,150), self.font, 0.4,(0,0,255),1,cv2.CV_AA)
+        cv2.line(gray_bord, (25, 165), (290, 165), (255, 255, 255), 1)
+        #UAV Status text Block
+        cv2.putText(gray_bord,'UAV Status',(25,185), self.font, 0.4,(0,125,250),1,cv2.CV_AA)
+        cv2.putText(gray_bord, self.airspeed.text, (25, 205), self.font, 0.4, self.airspeed.fg, 1, cv2.CV_AA)
+        cv2.putText(gray_bord, self.gpsspeed.text, (25, 225), self.font, 0.4, self.gpsspeed.text, 1, cv2.CV_AA)
+        cv2.putText(gray_bord, self.wind.text, (25, 245), self.font, 0.4, self.gpsspeed.fg, 1, cv2.CV_AA)
+        cv2.putText(gray_bord, self.flighttime.text, (25, 265), self.font, 0.4, self.flighttime.fg, 1, cv2.CV_AA)
+        cv2.putText(gray_bord, self.etr.text, (25, 285), self.font, 0.4, self.etr.fg, 1, cv2.CV_AA)
+        cv2.putText(gray_bord, self.as_status.text, (25, 305), self.font, 0.4, self.as_status.fg, 1, cv2.CV_AA)
+        cv2.putText(gray_bord, self.mag_status.text, (55, 305), self.font, 0.4, self.mag_status.fg, 1, cv2.CV_AA)
+        cv2.putText(gray_bord, self.ins_status.text, (85, 305), self.font, 0.4, self.ins_status_status.fg, 1, cv2.CV_AA)
+        cv2.putText(gray_bord, self.terr_status.text, (115, 305), self.font, 0.4, self.terr_status.fg, 1, cv2.CV_AA)
+        cv2.putText(gray_bord, self.ahrs_status.text, (145, 305), self.font, 0.4, self.ahrs_status.fg, 1, cv2.CV_AA)
+        cv2.line(gray_bord, (25, 320), (290, 320), (255, 255, 255), 1)
+        #Radio Status Text Block
+        cv2.putText(gray_bord,'Data Link Status',(25,340), self.font, 0.4,(0,125,250),1,cv2.CV_AA)
+        cv2.putText(gray_bord, self.radio_status.text, (25, 360), self.font, 0.4, self.radio_status.fg, 1, cv2.CV_AA)
+        cv2.putText(gray_bord, 'LinkN ----/---- packets', (25, 380), self.font, 0.4, (255, 255, 255), 1, cv2.CV_AA)
+        cv2.line(gray_bord, (25, 395), (290, 395), (255, 255, 255), 1)
+        #Route text block
+        cv2.putText(gray_bord, 'Route Status', (25,415), self.font, 0.4, (0, 125, 250), 1, cv2.CV_AA)
+        cv2.putText(gray_bord, self.wp.text, (25, 435), self.font, 0.4, (255, 255, 255), 1, cv2.CV_AA)
+        cv2.putText(gray_bord, self.wpdist.text, (25, 455), self.font, 0.4, (255, 255, 255), 1, cv2.CV_AA)
+        cv2.putText(gray_bord, self.homedist.text, (25, 475), self.font, 0.4, (255, 255, 255), 1, cv2.CV_AA)
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+        # Display the resulting frame
+        cv2.namedWindow("test", cv2.WND_PROP_FULLSCREEN)
+        cv2.setWindowProperty("test", cv2.WND_PROP_FULLSCREEN, cv2.cv.CV_WINDOW_FULLSCREEN)
+        cv2.imshow("test", gray_bord)
 
 def init(mpstate):
     '''initialise module'''
