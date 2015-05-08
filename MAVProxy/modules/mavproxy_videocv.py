@@ -35,6 +35,7 @@ class VideoCV(mp_module.MPModule):
         self.have_target = False
         self.cap = cv2.VideoCapture(0)
         self.font = cv2.FONT_ITALIC
+        self.cap_image = False
 
         # setup some default status information
 
@@ -77,10 +78,12 @@ class VideoCV(mp_module.MPModule):
         else:
             self.link_status.write('Link','Link OK',fg='green')
 
-        if btn_cap.state == pingo.HIGH:
+        if btn_cap.state == pingo.HIGH and self.cap_image is not True:
             time.sleep(0.1)
             if btn_cap.state == pingo.HIGH:
-                self.cap_img()
+                self.cap_image = True
+        else:
+            self.cap_image = False
 
         if btn_lock_targ.state == pingo.HIGH:
             time.sleep(0.1)
@@ -397,6 +400,12 @@ class VideoCV(mp_module.MPModule):
         cv2.putText(gray, 'ALT', (640, 268), self.font, 0.5, (255, 255, 255), 1, cv2.CV_AA)
         cv2.putText(gray, self.alt, (650, 293), self.font, 0.5, (255, 255, 255), 1, cv2.CV_AA)
 
+        if self.cap_image:
+
+            filename = '/VIDEO/screenshot/img'+time.strftime('%d%m%y%H%M%S')+'.png'
+            cv2.imwrite(filename, gray)
+            self.cap_image = False
+
         #Add left black border
         gray_bord = cv2.copyMakeBorder(gray, 0, 0, 304, 0, cv2.BORDER_CONSTANT, dst=None, value=(0, 0, 0))
 
@@ -426,7 +435,7 @@ class VideoCV(mp_module.MPModule):
         #Radio Status Text Block
         cv2.putText(gray_bord,'Data Link Status',(25,340), self.font, 0.4,(0,125,250),1,cv2.CV_AA)
         cv2.putText(gray_bord, self.radio_status.text, (25, 360), self.font, 0.4, self.radio_status.fg, 1, cv2.CV_AA)
-        cv2.putText(gray_bord, 'LinkN ----/---- packets', (25, 380), self.font, 0.4, (255, 255, 255), 1, cv2.CV_AA)
+        cv2.putText(gray_bord, self.link_status.text, (25, 380), self.font, 0.4, self.link_status.fg, 1, cv2.CV_AA)
         cv2.line(gray_bord, (25, 395), (290, 395), (255, 255, 255), 1)
         #Route text block
         cv2.putText(gray_bord, 'Route Status', (25,415), self.font, 0.4, (0, 125, 250), 1, cv2.CV_AA)
